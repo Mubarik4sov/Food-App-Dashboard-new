@@ -19,6 +19,8 @@ import {
   Package,
   Grid,
   List,
+  Upload,
+  Link,
 } from "lucide-react";
 import {
   apiService,
@@ -44,6 +46,9 @@ export default function CategoriesPage() {
     new Set()
   );
   const [filterType, setFilterType] = useState<"all" | "parent" | "sub">("all");
+  const [imageUploadMethod, setImageUploadMethod] = useState<"url" | "upload">("url");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
   const [formData, setFormData] = useState({
     categoryName: "",
     shortDescription: "",
@@ -58,6 +63,8 @@ export default function CategoriesPage() {
     loadCategories();
   }, []);
 
+  // Default demo image
+  const DEFAULT_IMAGE = "https://images.pexels.com/photos/315755/pexels-photo-315755.jpeg?auto=compress&cs=tinysrgb&w=300";
   const loadCategories = async () => {
     try {
       setLoading(true);
@@ -75,8 +82,7 @@ export default function CategoriesPage() {
           longDescription: cat.long_description,
           isSubCategory: cat.is_sub_category,
           coverImage:
-            cat.cover_image ||
-            "https://images.pexels.com/photos/315755/pexels-photo-315755.jpeg?auto=compress&cs=tinysrgb&w=300",
+            cat.cover_image || DEFAULT_IMAGE,
           parentCategoryIds: Array.isArray(cat.parent_categories)
             ? cat.parent_categories.map((p: any) => p.id)
             : [],
@@ -155,8 +161,38 @@ export default function CategoriesPage() {
       coverImage: "",
     });
     setEditingCategory(null);
+    setSelectedFile(null);
+    setImagePreview("");
+    setImageUploadMethod("url");
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please select a valid image file');
+        return;
+      }
+      
+      // Validate file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image size should be less than 5MB');
+        return;
+      }
+      
+      setSelectedFile(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        setImagePreview(result);
+        handleInputChange("coverImage", result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
   const handleAddCategory = () => {
     resetForm();
     setShowAddForm(true);
@@ -171,6 +207,10 @@ export default function CategoriesPage() {
       isSubCategory: category.isSubCategory,
       coverImage: category.coverImage,
     });
+    setImagePreview(category.coverImage);
+    if (category.coverImage && category.coverImage !== DEFAULT_IMAGE) {
+      setImageUploadMethod("url");
+    }
     setEditingCategory(category);
     setShowAddForm(true);
   };
@@ -187,15 +227,15 @@ export default function CategoriesPage() {
         return;
       }
 
+      // Use default image if no image is provided
+      const finalCoverImage = formData.coverImage.trim() || DEFAULT_IMAGE;
       const categoryData = {
         ...(editingCategory && { id: editingCategory.id }),
         categoryName: formData.categoryName.trim(),
         shortDescription: formData.shortDescription.trim(),
         longDescription: formData.longDescription.trim(),
         isSubCategory: formData.isSubCategory,
-        coverImage:
-          formData.coverImage.trim() ||
-          "https://images.pexels.com/photos/315755/pexels-photo-315755.jpeg?auto=compress&cs=tinysrgb&w=300",
+        coverImage: finalCoverImage,
         parentCategoryIds: formData.isSubCategory
           ? formData.parentCategoryIds
           : [],
@@ -445,57 +485,29 @@ export default function CategoriesPage() {
                 {formData.isSubCategory && (
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Parent Categories *
+                      Select Parent Category *
                     </label>
-                    <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-300 rounded-lg p-3">
-                      {parentCategories.map((category) => (
-                        <label
-                          key={category.id}
-                          className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={formData.parentCategoryIds.includes(
-                              category.id
-                            )}
-                            onChange={(e) => {
-                              const currentIds = formData.parentCategoryIds;
-                              if (e.target.checked) {
-                                handleInputChange("parentCategoryIds", [
-                                  ...currentIds,
-                                  category.id,
-                                ]);
-                              } else {
-                                handleInputChange(
-                                  "parentCategoryIds",
-                                  currentIds.filter((id) => id !== category.id)
-                                );
-                              }
-                            }}
-                            className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
-                            disabled={isSubmitting}
-                          />
-                          <div className="flex items-center space-x-2">
-                            <img
-                              src={category.coverImage}
-                              alt={category.categoryName}
-                              className="w-8 h-8 rounded object-cover"
-                              onError={(e) => {
-                                e.currentTarget.src =
-                                  "https://images.pexels.com/photos/315755/pexels-photo-315755.jpeg?auto=compress&cs=tinysrgb&w=300";
-                              }}
-                            />
-                            <span className="text-sm font-medium">
-                              {category.categoryName}
-                            </span>
-                          </div>
-                        </label>
+                    <select
+                      value={formData.parentCategoryIds[0] || ""}
+                      onChange={(e) => {
+                        const selectedId = e.target.value ? [parseInt(e.target.value)] : [];
+                        handleInputChange("parentCategoryIds", selectedId);
+                      }}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                      required
+                      disabled={isSubmitting}
+                    >
+                      <option value="">Select a parent category</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.isSubCategory ? "↳ " : ""}{category.categoryName}
+                        </option>
                       ))}
-                    </div>
+                    </select>
                     {formData.isSubCategory &&
                       formData.parentCategoryIds.length === 0 && (
                         <p className="text-sm text-red-500 mt-1">
-                          Please select at least one parent category
+                          Please select a parent category
                         </p>
                       )}
                   </div>
@@ -508,34 +520,124 @@ export default function CategoriesPage() {
               <h3 className="text-lg font-semibold text-gray-800 mb-4">
                 Cover Image
               </h3>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Image URL
-                </label>
-                <input
-                  type="url"
-                  value={formData.coverImage}
-                  onChange={(e) =>
-                    handleInputChange("coverImage", e.target.value)
-                  }
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                  placeholder="Enter image URL or leave empty for default"
-                  disabled={isSubmitting}
-                />
-                {formData.coverImage && (
-                  <div className="mt-3">
+              
+              {/* Image Upload Method Selection */}
+              <div className="mb-4">
+                <div className="flex space-x-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageUploadMethod("url");
+                      setSelectedFile(null);
+                      setImagePreview("");
+                    }}
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg border-2 transition-all ${
+                      imageUploadMethod === "url"
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
+                    }`}
+                    disabled={isSubmitting}
+                  >
+                    <Link className="w-4 h-4" />
+                    <span>Image URL</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageUploadMethod("upload");
+                      handleInputChange("coverImage", "");
+                    }}
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg border-2 transition-all ${
+                      imageUploadMethod === "upload"
+                        ? "border-green-500 bg-green-50 text-green-700"
+                        : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
+                    }`}
+                    disabled={isSubmitting}
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Upload Image</span>
+                  </button>
+                </div>
+              </div>
+              {/* Image URL Input */}
+              {imageUploadMethod === "url" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Image URL
+                  </label>
+                  <input
+                    type="url"
+                    value={formData.coverImage}
+                    onChange={(e) => {
+                      handleInputChange("coverImage", e.target.value);
+                      setImagePreview(e.target.value);
+                    }}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="Enter image URL or leave empty for default"
+                    disabled={isSubmitting}
+                  />
+                </div>
+              )}
+
+              {/* File Upload Input */}
+              {imageUploadMethod === "upload" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Upload Image
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-red-400 transition-colors">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-600 mb-2">
+                      {selectedFile ? selectedFile.name : "Click to upload or drag and drop"}
+                    </p>
+                    <p className="text-xs text-gray-500 mb-4">
+                      PNG, JPG, GIF up to 5MB
+                    </p>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      id="image-upload"
+                      disabled={isSubmitting}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById("image-upload")?.click()}
+                      className="text-red-600 hover:text-red-700 text-sm font-medium flex items-center space-x-1 mx-auto"
+                      disabled={isSubmitting}
+                    >
+                      <ImageIcon className="w-4 h-4" />
+                      <span>Choose File</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Image Preview */}
+              {(imagePreview || formData.coverImage) && (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Preview
+                  </label>
+                  <div className="flex items-center space-x-4">
                     <img
-                      src={formData.coverImage}
+                      src={imagePreview || formData.coverImage || DEFAULT_IMAGE}
                       alt="Preview"
                       className="w-32 h-32 object-cover rounded-lg border border-gray-200"
                       onError={(e) => {
-                        e.currentTarget.src =
-                          "https://images.pexels.com/photos/315755/pexels-photo-315755.jpeg?auto=compress&cs=tinysrgb&w=300";
+                        e.currentTarget.src = DEFAULT_IMAGE;
                       }}
                     />
+                    <div className="text-sm text-gray-600">
+                      <p>This is how your category image will appear</p>
+                      {!imagePreview && !formData.coverImage && (
+                        <p className="text-gray-500 mt-1">Default image will be used if no image is provided</p>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Submit Buttons */}
